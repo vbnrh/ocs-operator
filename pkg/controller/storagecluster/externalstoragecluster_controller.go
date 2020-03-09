@@ -79,6 +79,38 @@ func (r *ReconcileStorageCluster) ReconcileExternalStorageCluster(sc *ocsv1.Stor
 		return reconcile.Result{}, nil
 	}
 
+	externalCephCluster := newExternalCephCluster(sc, r.cephImage)
+	// Set StorageCluster instance as the owner and controller
+	if err := controllerutil.SetControllerReference(sc, externalCephCluster, r.scheme); err != nil {
+		return reconcile.Result{}, err
+	}
+	// Check if this CephCluster already exists
+	found := &cephv1.CephCluster{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: externalCephCluster.Name, Namespace: externalCephCluster.Namespace}, found)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating External CephCluster")
+			if err := r.client.Create(context.TODO(), externalCephCluster); err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+		return reconcile.Result{}, err
+	}
+	// Update the CephCluster if it is not in the desired state
+	if !reflect.DeepEqual(externalCephCluster.Spec, found.Spec) {
+		reqLogger.Info("Updating spec for External CephCluster")
+		sc.Status.Phase = string(found.Status.State)
+		err = r.client.Status().Update(context.TODO(), sc)
+		if err != nil {
+			reqLogger.Error(err, "Failed to add conditions to status")
+			return reconcile.Result{}, err
+		}
+		found.Spec = externalCephCluster.Spec
+		if err := r.client.Update(context.TODO(), found); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
 	// in-memory conditions should start off empty. It will only ever hold
 	// negative conditions (!Available, Degraded, Progressing)
 	r.conditions = nil
@@ -87,7 +119,6 @@ func (r *ReconcileStorageCluster) ReconcileExternalStorageCluster(sc *ocsv1.Stor
 
 	for _, f := range []func(*ocsv1.StorageCluster, logr.Logger) error{
 		// Add support for additional resources here
-		// r.ensureStorageClasses,
 		r.ensureCephConfig,
 		r.ensureExternalCephCluster,
 		r.ensureNoobaaSystem,
@@ -137,6 +168,9 @@ func (r *ReconcileStorageCluster) ReconcileExternalStorageCluster(sc *ocsv1.Stor
 			reqLogger.Error(err, "Failed to mark operator ready")
 			return reconcile.Result{}, err
 		}
+		if sc.Status.Phase != statusutil.PhaseClusterExpanding {
+			sc.Status.Phase = statusutil.PhaseReady
+		}
 	} else {
 		// If any component operator reports negatively we want to write that to
 		// the instance while preserving it's lastTransitionTime.
@@ -166,6 +200,15 @@ func (r *ReconcileStorageCluster) ReconcileExternalStorageCluster(sc *ocsv1.Stor
 			if err != nil {
 				reqLogger.Error(err, "Failed to mark operator unready")
 				return reconcile.Result{}, err
+			}
+		}
+		if sc.Status.Phase != statusutil.PhaseClusterExpanding {
+			if conditionsv1.IsStatusConditionTrue(sc.Status.Conditions, conditionsv1.ConditionProgressing) {
+				sc.Status.Phase = statusutil.PhaseProgressing
+			} else if conditionsv1.IsStatusConditionFalse(sc.Status.Conditions, conditionsv1.ConditionUpgradeable) {
+				sc.Status.Phase = statusutil.PhaseNotReady
+			} else {
+				sc.Status.Phase = statusutil.PhaseError
 			}
 		}
 	}
