@@ -6,6 +6,10 @@ import (
 	ocsv1 "github.com/openshift/ocs-operator/pkg/apis/ocs/v1"
 )
 
+func generateNameForExternalCephCluster(initData *ocsv1.StorageCluster) string {
+	return fmt.Sprintf("%s-external-cephcluster", initData.Name)
+}
+
 func generateNameForCephCluster(initData *ocsv1.StorageCluster) string {
 	return generateNameForCephClusterFromString(initData.Name)
 }
