@@ -17,6 +17,7 @@ import (
 	ocsv1 "github.com/openshift/ocs-operator/pkg/apis/ocs/v1"
 	"github.com/openshift/ocs-operator/pkg/controller/defaults"
 	statusutil "github.com/openshift/ocs-operator/pkg/controller/util"
+	"github.com/openshift/ocs-operator/version"
 	"github.com/operator-framework/operator-sdk/pkg/ready"
 	cephv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	rook "github.com/rook/rook/pkg/apis/rook.io/v1alpha2"
@@ -31,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"github.com/openshift/ocs-operator/version"
 )
 
 // StorageClassProvisionerType is a string representing StorageClass Provisioner. E.g: aws-ebs
@@ -111,6 +111,12 @@ func (r *ReconcileStorageCluster) Reconcile(request reconcile.Request) (reconcil
 		// just update.
 		instance.Spec.Version = version.Version
 	}
+
+	// if .Spec.ExternalStorage.Enable is true redirect to external Storage Cluster reconciler
+	if instance.Spec.ExternalStorage.Enable {
+		return r.ReconcileExternalStorageCluster(instance)
+	}
+
 	// Check for active StorageCluster only if Create request is made
 	// and ignore it if there's another active StorageCluster
 	// If Update request is made and StorageCluster is PhaseIgnored, no need to
