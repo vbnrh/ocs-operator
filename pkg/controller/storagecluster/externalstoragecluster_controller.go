@@ -131,7 +131,7 @@ func (r *ReconcileStorageCluster) ReconcileExternalStorageCluster(sc *ocsv1.Stor
 				reqLogger.Error(phaseErr, "Failed to set PhaseClusterExpanding")
 			}
 		} else {
-			if sc.Status.Phase != statusutil.PhaseReady {
+			if sc.Status.Phase != statusutil.PhaseReady && sc.Status.Phase != statusutil.PhaseConnecting && sc.Status.Phase != statusutil.PhaseConnected {
 				sc.Status.Phase = statusutil.PhaseProgressing
 				phaseErr := r.client.Status().Update(context.TODO(), sc)
 				if phaseErr != nil {
@@ -294,6 +294,7 @@ func (r *ReconcileStorageCluster) ensureExternalCephCluster(
 	} else {
 		// Interpret CephCluster status and set any negative conditions
 		// here negative conditions for external cluster has tobe set
+		statusutil.MapExternalCephClusterNegativeConditions(&r.conditions,found)
 	}
 
 	// When phase is expanding, wait for CephCluster state to be updating
@@ -302,6 +303,14 @@ func (r *ReconcileStorageCluster) ensureExternalCephCluster(
 	if sc.Status.Phase == statusutil.PhaseClusterExpanding &&
 		found.Status.State != cephv1.ClusterStateUpdating {
 		r.phase = statusutil.PhaseClusterExpanding
+	}
+
+	if found.Status.State == cephv1.ClusterStateConnecting {
+		sc.Status.Phase = statusutil.PhaseConnecting
+	}
+
+	if found.Status.State == cephv1.ClusterStateConnected {
+		sc.Status.Phase = statusutil.PhaseConnected
 	}
 
 	return nil
