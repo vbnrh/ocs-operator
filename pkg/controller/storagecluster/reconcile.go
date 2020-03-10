@@ -142,7 +142,9 @@ func (r *ReconcileStorageCluster) Reconcile(request reconcile.Request) (reconcil
 
 	if instance.Status.Phase != statusutil.PhaseReady &&
 		instance.Status.Phase != statusutil.PhaseClusterExpanding &&
-		instance.Status.Phase != statusutil.PhaseDeleting {
+		instance.Status.Phase != statusutil.PhaseDeleting &&
+		instance.Status.Phase != statusutil.PhaseConnecting &&
+		instance.Status.Phase != statusutil.PhaseConnected{
 		instance.Status.Phase = statusutil.PhaseProgressing
 		phaseErr := r.client.Status().Update(context.TODO(), instance)
 		if phaseErr != nil {
